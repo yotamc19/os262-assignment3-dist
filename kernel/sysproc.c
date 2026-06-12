@@ -95,13 +95,26 @@ sys_uptime(void)
 // Syscall argument 0: user virtual address of a page-aligned buffer
 // that is exactly GPU_FB_PAGES (300) * PGSIZE bytes (i.e. 640x480x4 =
 // 1,228,800 bytes).  The buffer must already be fully mapped in the
-// calling process's address space.
+// calling process's address space with user permission.
 //
-// TODO: Students implement this syscall.
+// Returns 0 on success, -1 on error.
 uint64
 sys_flip_display(void)
 {
-  return -1;
+  uint64 buf;
+  struct proc *p = myproc();
+
+  argaddr(0, &buf);
+
+  // Buffer must be page-aligned
+  if (buf % PGSIZE != 0)
+    return -1;
+
+  // Walk page table, validate all pages have PTE_U, and re-point GPU backing
+  if (virtio_gpu_flip(p->pagetable, buf) < 0)
+    return -1;
+
+  return 0;
 }
 
 // sys_map_display: map the GPU's kernel framebuffer pages (fb[]) directly
