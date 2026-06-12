@@ -111,10 +111,40 @@ sys_flip_display(void)
 //   Pass 0 to let the kernel auto-select the next available VA above p->sz.
 //
 // Returns the mapped virtual address on success, (uint64)-1 on failure.
-//
-// TODO: Students implement this syscall.
 uint64
 sys_map_display(void)
 {
-  return -1;
+  uint64 addr;
+  struct proc *p = myproc();
+
+  argaddr(0, &addr);
+
+  if (addr == 0) {
+    // Auto-select: first page-aligned VA above the current heap
+    addr = PGROUNDUP(p->sz);
+  } else {
+    // Caller-supplied address must be page-aligned
+    if (addr % PGSIZE != 0)
+      return -1;
+  }
+
+  // Ensure the entire region fits below the trapframe (top of user space)
+  if (addr + (uint64)GPU_FB_PAGES * PGSIZE > TRAPFRAME)
+    return -1;
+
+  // Check that none of the GPU_FB_PAGES pages are already mapped
+  for (uint64 va = addr; va < addr + (uint64)GPU_FB_PAGES * PGSIZE; va += PGSIZE) {
+    pte_t *pte = walk(p->pagetable, va, 0);
+    if (pte && (*pte & PTE_V))
+      return -1;
+  }
+
+  // Install the mapping (kernel fb[] pages -> user VA, PTE_U|PTE_R|PTE_W)
+  if (virtio_gpu_map_fb(p->pagetable, addr) < 0)
+    return -1;
+
+  // Remember the VA so freeproc() can remove the mapping on exit
+  p->fb_mapped_va = addr;
+
+  return addr;
 }
