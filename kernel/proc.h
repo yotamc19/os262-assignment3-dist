@@ -105,4 +105,6 @@ struct proc {
   struct inode *cwd;           // Current directory
   char name[16];               // Process name (debugging)
   uint64 fb_mapped_va;         // VA of GPU framebuffer mapping (0 if none)
+  int fb_flipped;              // 1 if this process flipped the GPU to its pages
+  uint64 fb_flip_va;           // user VA of the last flipped buffer (0 if none)
 };

@@ -114,6 +114,11 @@ sys_flip_display(void)
   if (virtio_gpu_flip(p->pagetable, buf) < 0)
     return -1;
 
+  // Track the flipped buffer VA so freeproc() can copy its content into
+  // the kernel fb[] on exit, keeping the frame visible after the process ends.
+  p->fb_flipped = 1;
+  p->fb_flip_va = buf;
+
   return 0;
 }
 

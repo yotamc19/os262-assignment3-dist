@@ -569,7 +569,8 @@ virtio_gpu_map_fb(pagetable_t pt, uint64 va)
 
 // ── Public: zero-copy page flip ───────────────────────────────────────
 // Re-points the GPU resource's backing list to the physical pages of the
-// calling process's buffer at user virtual address bufva.
+// calling process's buffer at user virtual address bufva, then immediately
+// commits the frame so it appears on screen before the caller can exit.
 // walkaddr() validates each page is present and has PTE_U.
 // Returns 0 on success, -1 if any page is not validly mapped.
 int
@@ -588,7 +589,43 @@ virtio_gpu_flip(pagetable_t pt, uint64 bufva)
 
     gpu_cmd_detach();
     gpu_cmd_attach(flip_entries, FB_PAGES);
+    // Commit immediately: TRANSFER_TO_HOST_2D copies the pixel data into
+    // QEMU's internal texture buffer so the image is visible before the
+    // calling process can exit and free its pages.
+    gpu_transfer_flush();
     return 0;
+}
+
+// ── Public: copy a user framebuffer into the kernel fb[] ──────────────
+// Called from freeproc() before freeing user pages so that the last
+// frame rendered by a flip_display process persists on screen after exit.
+// Walks the process page table at va, copying each page into fb[i].
+void
+virtio_gpu_copy_to_fb(pagetable_t pt, uint64 va)
+{
+    for (int i = 0; i < FB_PAGES; i++) {
+        uint64 pa = walkaddr(pt, va + i * PGSIZE);
+        if (pa == 0)
+            break;
+        memmove(fb[i], (void *)pa, PGSIZE);
+    }
+}
+
+// ── Public: restore GPU backing to the kernel framebuffer ─────────────
+// Called from freeproc() after copying the last user frame into fb[],
+// so the display daemon's next commit reads from the kernel fb[] instead
+// of the now-freed user pages.
+void
+virtio_gpu_restore_fb(void)
+{
+    static struct virtio_gpu_mem_entry entries[FB_PAGES];
+    for (int i = 0; i < FB_PAGES; i++) {
+        entries[i].addr    = (uint64)fb[i];
+        entries[i].length  = PGSIZE;
+        entries[i].padding = 0;
+    }
+    gpu_cmd_detach();
+    gpu_cmd_attach(entries, FB_PAGES);
 }
 
 // ── GPU daemon ────────────────────────────────────────────────────────

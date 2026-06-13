@@ -159,6 +159,13 @@ freeproc(struct proc *p)
     kfree((void*)p->trapframe);
   p->trapframe = 0;
   if(p->pagetable) {
+    // If this process flipped the GPU to its pages, copy the last rendered
+    // frame into the kernel fb[] so it persists on screen after exit, then
+    // restore the kernel fb[] as the GPU backing before freeing user pages.
+    if(p->fb_flipped && p->fb_flip_va != 0) {
+      virtio_gpu_copy_to_fb(p->pagetable, p->fb_flip_va);
+      virtio_gpu_restore_fb();
+    }
     // Remove GPU framebuffer mapping before freeing page table.
     // Use do_free=0: these are kernel-owned pages, must not be freed.
     if(p->fb_mapped_va != 0)
@@ -167,6 +174,8 @@ freeproc(struct proc *p)
   }
   p->pagetable = 0;
   p->fb_mapped_va = 0;
+  p->fb_flipped = 0;
+  p->fb_flip_va = 0;
   p->sz = 0;
   p->pid = 0;
   p->parent = 0;
