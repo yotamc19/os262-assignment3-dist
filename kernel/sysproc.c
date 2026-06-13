@@ -138,10 +138,15 @@ sys_map_display(void)
   argaddr(0, &addr);
 
   if (addr == 0) {
-    // Auto-select: first page-aligned VA above the current heap
+    // Auto-select: if already mapped, return the existing VA (idempotent)
+    if (p->fb_mapped_va != 0)
+      return p->fb_mapped_va;
     addr = PGROUNDUP(p->sz);
   } else {
-    // Caller-supplied address must be page-aligned
+    // Manual address: only one mapping per process is supported
+    if (p->fb_mapped_va != 0)
+      return -1;
+    // Must be page-aligned
     if (addr % PGSIZE != 0)
       return -1;
   }
